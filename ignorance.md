@@ -15,3 +15,11 @@ stripped, as though it's reconstructed from the string of tokens.
 
 @
 
+> How does the "automatic block return value if the semicolon is
+> missing" thing work grammatically?  Does rust have redundant statement
+> and expression syntax?
+>
+> What if you do `let x = if cond { V1 };` with no `else` clause?
+> What is the type? What if the type has a Default?
+
+@
