@@ -40,7 +40,7 @@ fn play() -> io::Result<()> {
         };
 
         if guess == num {
-            if lie == None && random::<f64>() < 0.15 {
+            if lie == None && random::<f64>() < 0.25 {
                 lie = Some(format!("it wasn't {}", guess));
                 println!("Nope, my number is {} than that",
                          if random::<f64>() < 0.5 { "lower" } else { "higher"});
