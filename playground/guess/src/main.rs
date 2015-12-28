@@ -1,3 +1,9 @@
+// non-obvious things in this program
+// * `let (num, mut lie)` is a pattern with `mut` in it.
+// * `random::<f64>` is calling a generic function and explicitly passing the type parameter
+// * plain `try!(io::stdout().lock().flush())` doesn't work
+// * unclear how to write characters to stdout
+
 extern crate rand;
 
 use rand::random;
