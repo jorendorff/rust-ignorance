@@ -88,7 +88,59 @@ No. The error message is:
 
 
 
+## Terminology
+
+> Is there a better term than "object" for these things that have lifetimes?
+
+@@@
+
+> What are the branches of an `enum` called? Variants?
+
+@@@
+
+> What are the member fields of enums called? Fields?
+
+@@@
+
+
+
 ## Lifetimes
+
+> What invariants exactly does the borrow checker enforce?
+
+I'm not sure, but here are things I know it does enforce:
+
+*   An object can't be moved or dropped while any reference to it, or to
+    any enclosing object or subobject of it, exists.
+
+*   As long as any non-`mut` reference to an object exists,
+    the object can't be assigned to (with an exception for cells?).
+
+*   As long as a reference points to data in an object of `enum` type,
+    the object can't change to another variant of that `enum`.
+
+*   As long as a `mut` reference to an object exists,
+    no other reference to it, or to any enclosing object or subobject of it, exists.
+
+*   There's some set of things you can't do to an object that's been moved
+    or dropped.
+
+@@@
+
+> Do we always know statically whether or not a binding has been dropped? What about code like:
+>
+>     {
+>         let x = Thing::new();
+>         if condition { use(&x); drop(x); }
+>         ...
+>     }
+>
+> Is it allowed? Is it allowed *only* if `x` is not mentioned thereafter?
+>
+> What if `condition` is false? `x` gets dropped implicitly at the end of the block.
+> How does the compiled code know whether or not it has already been dropped?
+
+@@@
 
 > When you declare `let (a, b) = ...`, do the two bindings have the same lifetime?
 
