@@ -69,6 +69,14 @@ Definitely, but I haven't looked into it.
 
 @@@
 
+> Why is "hello world" 500KB?
+
+@@@
+
+> What's the mechanism behind thread panic cleanup? The same as LLVM's
+> support for C++ exceptions?
+
+@@@
 
 
 ## Traits
