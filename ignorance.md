@@ -1,7 +1,7 @@
 ## License
 
 I'm afraid this one is copyright me and all rights reserved for now.
-Not my usual thing. I'm under contract for a book on this stuff.
+Not my usual thing.
 
 
 ## Random questions
@@ -18,15 +18,6 @@ stripped, as though it's reconstructed from the string of tokens.
 
 > What kind of code does `assert!(x)` expand to?
 > How can I tell what a macro expands to, generally?
-
-@@@
-
-> How does the "automatic block return value if the semicolon is
-> missing" thing work grammatically?  Does rust have redundant statement
-> and expression syntax?
->
-> What if you do `let x = if cond { V1 };` with no `else` clause?
-> What is the type? What if the type has a Default?
 
 @@@
 
@@ -79,6 +70,135 @@ Definitely, but I haven't looked into it.
 @@@
 
 
+## Statements and expressions
+
+> How does the "automatic block return value if the semicolon is
+> missing" thing work grammatically?  Does rust have redundant statement
+> and expression syntax?
+>
+> What if you do `let x = if cond { V1 };` with no `else` clause?
+> What is the type? What if the type has a Default?
+
+@@@
+
+> How is overflow handled with unsigned integer types?
+
+The same as for signed integer types.
+
+> Is there subslice syntax `&x[y..z]`? If so, how is it handled in the grammar?
+
+@@@
+
+> How does this semicolon thing work anyway? Is `if x { f(); }` an expression?
+
+@@@
+
+> Is there a nice error message if you type `genfn<u32>()` instead of
+> `genfn::<u32>()`?
+
+@@@
+
+> Is `b'\xff'` a legal byte literal?
+
+Yes.
+
+Weirdly, `'\xff'` is not a legal `char` literal, I guess to avoid giving
+the impression that the character U+00FF is represented as the byte FF
+in strings.
+
+> Does Rust have a `sizeof` operator or equivalent?
+
+@@@
+
+> Can both sides of `@` be patterns, or is the lhs required to be a single identifier?
+
+@@@
+
+> Does Rust have labeled `break` and `continue`?
+
+Yes.
+
+    'foo: loop {
+        ...
+        break 'foo;
+    }
+
+> Interesting. Is that `'foo` also a lifetime? Can it be used as a
+> lifetime parameter? (If so, is that useful?)
+
+@@@
+
+## Types and type inference
+
+### Diverging expressions (`!`)
+
+> Can a diverging expression be used as a function parameter? What is its type?
+
+Yes, it can, and I suppose its type is inferred.
+
+This program:
+
+    fn g(a: String) -> usize { a.len() }
+    fn f() -> usize { g(return 13) }
+    fn main() { println!("f(): {}", f()); }
+
+prints `f(): 13`.
+
+> Can a diverging expression be used as one side of an if-expression?
+> Can I write: `g(if x { return 13; } else { 117 })`?
+
+Yes. The type of the if-expression is, I suppose, the type of
+the other branch.  This program:
+
+    fn g(a: usize) -> usize { a & !3 }
+
+    fn f(a: bool) -> usize {
+        g(if a { return 13; } else { 117 })
+    }
+
+    fn main() {
+        println!("f(true): {}", f(true));
+        println!("f(false): {}", f(false));
+    }
+
+prints:
+
+    f(true): 13
+    f(false): 116
+
+> OK. If the type of a diverging expression is "inferred", I guess that
+> would mean that an expression like `return 13` generates no "outward"
+> type equations for the purpose of type inference. It would seem to
+> follow that if there are no contextual ("inward") constraints on its
+> type either, then there should be a type error. Inference can't figure
+> out the type. Right?
+
+@@@
+
+> Can you do `panic!() + 2`?
+
+@@@
+
+
+## User-defined types (structs and enums)
+
+> Tuples automatically derive `Clone` and `Copy` if appropriate, right?
+
+Yes.
+
+> OK. What about tuple-style structs?
+
+They don't derive `Clone` or `Copy` unless you ask for them.
+
+> Do patterns work in struct declarations?
+>
+>     struct WrappingRange {
+>         (start, span): (i32, u32)
+>     }
+
+No. `error: expected ident`.
+
+
 ## Traits
 
 > Can I add a method to all instances of a trait, without defining a new
@@ -98,9 +218,9 @@ No. The error message is:
 
 ## Terminology
 
-> Is there a better term than "object" for these things that have lifetimes?
+> What is the term for these things that have lifetimes?
 
-@@@
+They are called values.
 
 > What are the branches of an `enum` called? Variants?
 
@@ -152,7 +272,7 @@ I'm not sure, but here are things I know it does enforce:
 
 > When you declare `let (a, b) = ...`, do the two bindings have the same lifetime?
 
-If neither `a` nor `b` implements `Drop`, then yes!
+If neither `a` nor `b` implements `Drop`, then yes. (??!?)
 
     let (mut a, mut b) = (Thing::new(0), Thing::new(1));
     b.p = Some(&a.v);   // ok
@@ -192,3 +312,117 @@ So we have:
 If we add a few more sensible constraints about Rust not being allowed
 to create `a.v` and `b.v` before creating either of `a` or `b`, then
 the only solution would be that all these lifetimes are equal.)
+
+> The reference says that in `let x = foo(&temp())`, the temporary that
+> stores the result of `temp()` will be freed after the `let` declaration.
+> Is that true even if the signature of `foo` is `fn foo(&T) -> &T`?
+> In that case, it seems like the temporary should live as long as `x`.
+
+The temporary really only lives as long as the declaration. Lifetime
+inference does not come into play; the lifetime of a temporary is
+determined syntactically.
+
+This program:
+
+    fn seven() -> u32 { 7 }
+    fn f(x: &u32) -> &u32 { x }
+
+    fn main() {
+        let x = f(&seven());
+        println!("{}", *x);
+    }
+
+produces these errors:
+
+    error: borrowed value does not live long enough
+    :5     let x = f(&seven());
+                      ^~~~~~~
+    note: reference must be valid for the block suffix following statement 0 at 5:24...
+    :5     let x = f(&seven());
+    :6     println!("{}", *x);
+    :7 }
+    note: ...but borrowed value is only valid for the statement at 5:4
+    help: consider using a `let` binding to increase its lifetime
+
+> If lifetimes can be different depending on whether or not a type
+> implements `Drop`, then what happens with type parameters? Is this
+> something weird about `Drop`?
+
+This works OK whether you call it with a type that implements `Drop` or
+not:
+
+    struct GenThing<'a, T: 'a> {
+        v: T,
+        p: Option<&'a T>
+    }
+
+    fn ok_generic_downref<T>(av: T, bv: T) {
+        let (mut a, mut b) = (GenThing::new(av), GenThing::new(bv));
+        b.p = Some(&a.v);
+        a.p = Some(&b.v);
+    }
+
+(Given the obvious implementation of `GenThing::new()`.)
+
+This doesn't cause any problems, because the destructor in question
+(`T::drop(&mut self)`) does not have access to the reference field
+`GenThing::p`.
+
+@@@
+
+
+## Statics
+
+> The reference says that "Statics may contain interior mutability
+> through the `UnsafeCell` language item." What is a language item?
+> Why won't the normal things work?
+
+No idea what a "language item" is.
+
+Possibly because `Mutex` and `RwLock` have destructors, while `Cell` and
+`RefCell` are not `Sync`. Statics must be `Sync` and must not have
+destructors.
+
+@@@
+
+
+## Modules
+
+> Suppose I do `pub use other_mod::MyFancyEnum;` where
+> `other_mod::MyFancyEnum` is an enum with some public constructors. Are
+> the constructors automatically exposed by my module too? Is there a
+> way to make them not be?
+
+@@@
+
+
+## Crates
+
+> What exactly is a crate?
+
+@@@
+
+> Can an arbitrary crate (in source form or in binary form) be turned
+> into a .so/.dylib/.dll shared library?
+
+@@@
+
+> Can crates be linked together into bigger crates?
+
+@@@
+
+> Can two crates depend on each other (a cyclic dependency)?
+
+@@@
+
+> How does syntax extension sharing across crates work, exactly? (Not
+> smart enough to have a precise question yet.)
+
+@@@
+
+> But in particular, how is the `#[derive(Serialize)]` thing in
+> `serde_json` implemented, within `serde_json`, and how is it handled
+> by the compiler when `serde_json` is being consumed as an `extern
+> crate`?
+
+@@@
