@@ -70,12 +70,67 @@ Definitely, but I haven't looked into it.
 @@@
 
 
+## Grammar
+
+> In a path, can a module name be separated from the following `::` by whitespace?
+
+Yes.
+
+    println!("{}", abc ::def());
+
+I don't know why the parser appears to have a special case for
+identifiers followed immediately by `::`.
+
+> Can a macro name be separated from its `!` by whitespace?
+
+Yes. This works:
+
+    println /* comment */
+        !("hello world");
+
+> Can a macro name be a path?
+
+No. They're not scoped quite like other items, I guess because macros
+have to be expanded at a point during compilation when scopes don't
+exist yet.
+
+http://doc.rust-lang.org/book/macros.html#scoping-and-macro-importexport
+
+Examples of things not working:
+
+    mod foo {
+        macro_rules! bar {
+            ($e:expr) => (println!("bar: {}", $e));
+        }
+    }
+
+    use foo::bar;  // error: unresolved import `foo::bar`. There is no `bar` in `foo`
+
+    fn main() {
+        foo::bar!(3);  // error: expected macro name without module separators
+    }
+
+You also can't declare a macro to be `pub`. Instead, you have to declare
+`mod foo` to have the attribute `#[macro_use]` or `#[macro_use(bar)]`.
+
+To export a macro to other crates, you have to give the macro the
+`#[macro_export]` attribute. This works even if the module in which
+the macro is declared doesn't have `#[macro_use]`.
+
+
 ## Statements and expressions
 
 > How does the "automatic block return value if the semicolon is
 > missing" thing work grammatically?  Does rust have redundant statement
 > and expression syntax?
->
+
+Rust does *not* have redundant statement and expression syntax.
+
+I've sort of reverse-engineered how this works from the parser, but I
+don't know how to express it yet. It may be horrible.
+
+@@@
+
 > What if you do `let x = if cond { V1 };` with no `else` clause?
 > What is the type? What if the type has a Default?
 
@@ -128,7 +183,40 @@ Yes.
 
 @@@
 
+> In the parser, in the `ast` module, we have:
+>
+>     /// An `if` block, with an optional else block
+>     ///
+>     /// `if expr { block } else { expr }`
+>     ExprIf(P<Expr>, P<Block>, Option<P<Expr>>),
+
+Why is the "then" part a block, when the "else" part is an expr? What's the difference?
+
+
 ## Types and type inference
+
+### Weird types
+
+> How do you create a value of `Box<T>` where `T` is an unsized type?
+> In particular, it seems useful for trait objects.
+
+The reference gives an example for trait objects:
+you can just `Box::new(10) as Box<MyTrait>` if the right `impl` exists.
+
+@@@
+
+> Possibly the same question: Why doesn't this program work?
+>
+>     use std::ops::*;
+>     static arr: [i32; 4] = [1, 2, 3, 4];
+>     fn main() {
+>         let slice: &'static [i32] = &arr;
+>         let a = slice as &Index<Range<usize>, Output=&'static [i32]>;
+>         println!("{:?}", a[2..4]);
+>     }
+
+@@@
+
 
 ### Diverging expressions (`!`)
 
@@ -213,7 +301,6 @@ No. `error: expected ident`.
 No. The error message is:
 
     error: no base type found for inherent implementation; implement a trait or new type instead
-
 
 
 ## Terminology
@@ -370,6 +457,17 @@ This doesn't cause any problems, because the destructor in question
 
 @@@
 
+> I want to write a struct for parsing some text.
+> Can I do it without a lifetime parameter?
+>
+>     struct Parser {
+>         chars: Chars<???>
+>         remaining_input: &'??? str
+>     }
+
+It's probably best for the parser to own the string
+for the duration of parsing.
+
 
 ## Statics
 
@@ -379,6 +477,10 @@ This doesn't cause any problems, because the destructor in question
 
 No idea what a "language item" is.
 
+I think now that it's some pluggable but super fundamental part of Rust,
+like the default allocator (`malloc`). But I don't remember where I read
+that, and there was a warning not to actually use this feature.
+
 Possibly because `Mutex` and `RwLock` have destructors, while `Cell` and
 `RefCell` are not `Sync`. Statics must be `Sync` and must not have
 destructors.
@@ -386,7 +488,27 @@ destructors.
 @@@
 
 
-## Modules
+## Modules, paths, names, namespaces
+
+> A path can start with `<` *type* `>::`. What does that do?
+
+@@@
+
+> Can you have both a type and a `fn` with the same name in the same module?
+
+Yes.
+
+    struct X { a: u32 }
+
+    #[allow(non_snake_case)]
+    fn X(v: u32) -> X {
+        X { a: v + 1 }
+    }
+
+It seems there are two namespaces: one for types and one for values.
+
+Note that a declaration `struct X;` or `struct X(u32);` declares both a
+type and a value.
 
 > Suppose I do `pub use other_mod::MyFancyEnum;` where
 > `other_mod::MyFancyEnum` is an enum with some public constructors. Are
