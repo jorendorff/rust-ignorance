@@ -16,8 +16,38 @@ stripped, as though it's reconstructed from the string of tokens.
 
     thread '<main>' panicked at 'assertion failed: a == b', src/main.rs:4
 
+The `assert!` macro uses the `stringify!` macro to construct this string.
+
 > What kind of code does `assert!(x)` expand to?
 > How can I tell what a macro expands to, generally?
+
+Macros are documented in the most straightforward way possible:
+the documentation literally includes complete source code for the macro,
+albeit with the whitespace scrambled.
+
+The definition of `assert!` is:
+
+    macro_rules! assert {
+        ($cond: expr) => (
+            if !$cond {
+                panic!(concat!("assertion failed: ", stringify!($cond)));
+            }
+        );
+        ($cond: expr, $($arg: tt)+) => (
+            if !$cond {
+                panic!($($arg)+);
+            }
+        );
+    }
+
+Or something to that effect.
+
+> Macros are hygienic, right? If a macro takes an `expr` argument,
+> and the actual argument contains a `break`, but the macro also
+> inserts a loop, then which loop does the `break` break out of?
+> (I guess hygiene would suggest it breaks out of the innermost loop
+> lexically evident in the context in which the macro is invoked?
+> Not actually totally sure of myself there.)
 
 @@@
 
