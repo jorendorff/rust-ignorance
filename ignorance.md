@@ -607,6 +607,18 @@ I'm not sure, but here are things I know it does enforce:
 
 @@@
 
+> If a variable is declared without an initializer, can it be initialized twice?
+>
+>     {
+>         struct Cake;
+>         let x;
+>         x = Cake;
+>         let y = x;  // move
+>         x = Cake;   // re-initialize
+>     }
+
+Nope.  The last line gets ``error: re-assignment of immutable variable `x`.``
+
 > When you declare `let (a, b) = ...`, do the two bindings have the same lifetime?
 
 If neither `a` nor `b` implements `Drop`, then yes. (??!?)
