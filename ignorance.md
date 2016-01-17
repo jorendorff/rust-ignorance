@@ -90,6 +90,34 @@ Definitely, but I haven't looked into it.
 
 @@@
 
+> What causes Rust to emit and not emit this message?
+>
+>     error: not all control paths return a value
+>
+> I think there are cases where this message *should* be emitted, but it
+> isn't.
+
+I think it is definitely emitted when you write something like:
+
+    fn foo() -> Object {
+        f();
+    }
+
+but in this case, it is not:
+
+    fn cat<F: BufRead>(infile: F) -> std::io::Result<()> {
+        for line in infile.lines() {
+            let line = try!(line);
+            println!("    {:?}", line);
+        }
+    }
+
+In the latter case, due to an accident of grammar,
+the `for`-expression is parsed as a final expression
+rather than as a statement. I bet that's it.
+
+@@@
+
 
 ## Grammar
 
@@ -147,8 +175,13 @@ the macro is declared doesn't have `#[macro_use]`.
 
 Rust does *not* have redundant statement and expression syntax.
 
-I've sort of reverse-engineered how this works from the parser, but I
-don't know how to express it yet. It may be horrible.
+The syntax of a block is `{ stmt* expr? }`.
+
+(In addition, inner attributes are permitted if this is the main block of a `fn`.)
+
+A statement is either a `let` declaration,
+an item declaration (a nested `fn`, `struct`, or `enum`),
+or an *expression statement* (just an expression followed by a semicolon).
 
 @@@
 
