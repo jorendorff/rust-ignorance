@@ -246,8 +246,204 @@ Yes.
 
 Why is the "then" part a block, when the "else" part is an expr? What's the difference?
 
+> Does a `for` loop consume the collection even if it's a collection of a type that's `Copy`?
+
+Sure does.
+
+    let v: Vec<i32> = vec![0, 1, 2, 3, 4];
+    for _ in v {}
+    println!("after: {:?}", v);  // error: use of moved value: `v`
+
+If the collection itself is `Copy`, then we're ok:
+
+    let v: Vec<i32> = vec![0, 1, 2, 3, 4];
+    let slice: &[i32] = &v;
+    for _ in slice {}
+    for _ in slice {}
+    println!("after: {:?}", slice);
+
+> OK, can you prevent a `for` loop from consuming its collection by using a `ref` pattern?
+
+Nope:
+
+    let v: Vec<i32> = vec![0, 1, 2, 3, 4];
+    for ref p in v {}
+    println!("after: {:?}", v);  // error: use of moved value: `v`
+
+> Is it generally true that you can make a `for` loop not consume the collection
+> by adding a `&` to the right of `in`? If so, how does that work?
+
+It's not guaranteed by the language, but the builtin collections all seem to support this pattern.
+
+> If you add `&mut` to the right of `for x in`, does that cause `x` to be bound
+> to a `mut` reference?
+
+Again, not guaranteed by the language, and while this works for most of
+the standard collection types, it does not work for others.
+
+Consider `BTreeSet`. Modifying a value that's stored in an ordered collection
+would be trouble! So `IntoIterator` is not implemented for `&'a mut BTreeSet<V>`.
+
+Similarly, `IntoIterator` is implemented for `&'a mut BTreeMap<K, V>`, but
+the item type for that implementation is `(&'a K, &'a mut V)`;
+the keys are not mutable. Same for `HashMap`.
+
+> OK, so much for standard collection types. What about arrays of fixed size? Slices?
+
+Arrays of fixed size are not directly iterable.
+
+Slices are iterable and `Copy`. If you iterate over a slice of type `&[T]`,
+the type of your binding is `&T`.
+
+`mut` slices are also iterable, but not `Copy`.
+
+    let slice: &mut [i32] = &mut [0, 1, 2];
+    for p in slice { println!("{:?}", *p); *p += 1; }
+    println!("after: {:?}", slice);  // error: use of moved value
+
+> How can an integer be converted to a C-like `enum` type?
+>
+>     #![derive(Debug, Clone, Copy)]
+>     enum Color { Red = 1, Green, Blue, Purple }
+>     let i = 1;
+>     let c = ???;  // convert i to type Color
+>     println!("{:?}", c);  // should say "Red"
+>
+> (The reverse is possible using a cast: `Red as i32` is `1`.)
+
+I don't think this is possible short of `std::mem::transmute()`.
+
+@@@
+
+
+## Declarations
+
+> What are the scoping rules for `let` vs. `fn` (and other item declarations) in a block?
+
+The scope of a `let` binding begins *after* the `let` declaration and continues to the end of the block.
+
+The scope of an item is the whole containing block.
+
+This means that two `fn`s declared in a block can call each other:
+
+    #[test]
+    fn fns() {
+        fn odd(x: usize) -> bool { x != 0 && even(x - 1) }
+        fn even(x: usize) -> bool { x == 0 || odd(x - 1) }
+        assert_eq!(even(33), false);  // passes
+    }
+
+but two closures can't:
+
+    let odd = |x| x != 0 && even(x - 1);  // error: unresolved name `even`
+    let even = |x| x == 0 || odd(x - 1);
+
+Constructing the closures more carefully can get rid of the name error,
+but there is still a type error:
+
+    let (odd, even);
+    odd = |x| x != 0 && even(x - 1);  // type error: `even`
+    even = |x| x == 0 || odd(x - 1);
+
+> What happens if the type of a block isn't in scope outside the block?
+>
+>     println!("{:?}", {
+>         #[derive(Debug)] struct Cow;
+>         Cow
+>     });
+
+This works, printing `Cow`!
+
+The type doesn't have to be in scope in order for generics to operate on it.
+
 
 ## Types and type inference
+
+> Why can't I write `(3.14).floor()`?
+
+I think this is kind of unfortunate.
+The type of a constant like `3.14` is either `f32` or `f64`;
+the exact type is inferred from context.
+But type inference does not suss out the type equation
+
+    typeof 3.14 = typeof (3.14).floor()
+
+because Rust does not consider that `f32` and `f64` have a bunch of methods in common.
+
+If you tell Rust the type, instead of relying on type inference, it works:
+
+    println!("{}", (3.14f64).floor());  // 3
+    println!("{}", f64::floor(3.14));   // 3
+
+The former works because, knowing the type of `3.14f64`, Rust can then look up the `floor` method.
+The latter works because we tell Rust to look up the `floor` method of the `f64` type.
+
+When the method involved is an operator:
+
+    println!("{}", 1.0 / 3.0);  // ok!
+    println!("{}", std::ops::Div::div(1.0, 3.0)); // ok
+    println!("{}", (1.0).div(3.0)); // error: no method named `div` found for type `_`
+
+The `/` operator (the first example)
+must be syntactic sugar for the second example here,
+not the third.
+
+I think `(3.14).floor()` could be made to work:
+give `f32` and `f64` a common trait and put all their common methods on it.
+Then tell the type checker that a float literal's type has that trait (as a bound).
+
+> What coercions are permitted without a cast?
+
+`&mut T` to `&T` is allowed.
+
+`&T` to `&U` is allowed if `<T as Deref>::Target` is `U`.
+
+`&mut T` to `&mut U` is allowed if `T: DerefMut` and `<T as Deref>::Target` is `U`.
+
+@@@
+
+
+### `if` and `match`
+
+> What are the types involved in an `if` expression?
+
+For a while I had a theory that the two blocks of an `if` expression
+only had to agree in type if the `if` expression's own type was actually
+used. But that predicts this program is OK, and it's not:
+
+    fn main() {
+        if true { 1 } else { "ok" };  // error: if and else have incompatible types
+        println!("ok");
+    }
+
+So I now believe that the two blocks of an `if` expression must always agree.
+Furthermore, if an `if` expression appears as a statement, I suppose its type must be `()`.
+
+    fn f() -> bool { true }
+
+    fn main() {
+        if true { f() }  // error: mismatched types: expected (), found bool
+        else { }
+        println!("ok");
+    }
+
+I believe that `if EXPR BLOCK` without an `else` block is always
+equivalent to `if EXPR BLOCK else {}` with an empty `else` block.
+
+> If a type has no values, is it legal to use it in a `match` expression with no arms?
+
+Yes:
+
+    enum Nonesuch {}
+
+    fn what(ns: Nonesuch) -> ! {
+        match ns {}   // ok
+    }
+
+Of course such an expression can never be evaluated,
+because you would have to have already produced a value of the empty `Nonesuch` type,
+a logical impossibility.
+
 
 ### Weird types
 
