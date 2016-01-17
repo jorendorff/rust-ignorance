@@ -569,7 +569,7 @@ They are called values.
 
 
 
-## Lifetimes
+## Moves, borrowing, lifetimes
 
 > What invariants exactly does the borrow checker enforce?
 
@@ -592,7 +592,7 @@ I'm not sure, but here are things I know it does enforce:
 
 @@@
 
-> Do we always know statically whether or not a binding has been dropped? What about code like:
+> Do we always know statically whether or not a value has been dropped? What about code like:
 >
 >     {
 >         let x = Thing::new();
@@ -710,13 +710,69 @@ This doesn't cause any problems, because the destructor in question
 > I want to write a struct for parsing some text.
 > Can I do it without a lifetime parameter?
 >
->     struct Parser {
->         chars: Chars<???>
->         remaining_input: &'??? str
+>     struct Parser<'x> {   // <-- eliminate this somehow?
+>         chars: Chars<'x>
+>         remaining_input: &'x str
 >     }
 
 It's probably best for the parser to own the string
 for the duration of parsing.
+
+> Does (non-initializing) assignment cause the previous value to be dropped?
+>
+>     let mut a = vec![1];
+>     a = vec![2];
+
+@@@
+
+> Can lifetimes be used to enforce a rule like "both arguments to this method
+> must be owned by the same parent object"?
+>
+>     fn are_friends(thing1: ThingRef<'a>, thing2: ThingRef<'a>) -> bool { ... }
+>
+> (We want to ensure that every `ThingRef<'a>` is created from a
+> `ThingZone` with lifetime `'a`; that no two `ThingZone` objects have
+> the same lifetime; and that no `ThingRef<'a>` can pass as a
+> `ThingRef<'b>` if `'b` is a different lifetime.)
+
+Yes: https://gist.github.com/jorendorff/45116c5aa132d5fe58e9
+
+Discussion: https://users.rust-lang.org/t/can-rust-lifetimes-be-used-to-enforce-this-api-rule/4287
+
+> OK, how exactly does the scheme above work?
+
+Good question.
+
+@@@
+
+> Do lifetimes really have "no influence on codegen", as Mutabah claims
+> in this fascinating conversation?
+>
+>     <Raticide> I'm not sure I get lifetimes. Is it basically: anything that uses lifetime 'a will stay in memory until all things using that lifetime descope?
+>     <Mutabah> Raticide: No, lifetimes are a compile-time annotation used to check that things aren't dropped while still in use
+>     <Raticide> oh, so they don't really change any behaviour?
+>     <Mutabah> Nope.
+>     <Mutabah> No influence on codegen
+>     <Raticide> ah cool. thanks
+>     <kmc> Raticide: what you said is basically true though, just the causality is backwards from what you implied
+>     <kmc> a value is freed simply when it reaches the end of a function without being moved somewhere else
+>     <Raticide> yeah, so it ensures the human keeps them in memory
+>     <kmc> right
+>     <Havvy> Raticide:  Yep. Just like shape types ensure the human passes values with the right size and shape.
+>     <Raticide> that's pretty cool
+>     <Raticide> better than a segfault
+>     <kmc> yep
+>     <kmc> better than a silent, exploitable use after free :)
+>
+> I think it's basically right, but type systems are weird, so I would not
+> be surprised to hear of exceptions to the rule.
+>
+> It would be interesting to know the erasure algorithm that turns a
+> Rust program into a Rust-minus-lifetimes program. Remove all lifetime
+> parameters; remove all lifetime annotations from reference types. Is
+> anything left?
+
+@@@
 
 
 ## Statics
