@@ -68,15 +68,6 @@ Definitely, but I haven't looked into it.
 
 @@@
 
-> Do you have to `use std;` in order to write fully qualified names like
-> `std::env::args()`?
-
-@@@
-
-> What's the prelude like? How does it get included?
-
-@@@
-
 > What do error messages look like when you `result.expect("something went wrong")` and
 > something goes wrong?
 
@@ -520,6 +511,36 @@ destructors.
 
 ## Modules, paths, names, namespaces
 
+> Do you have to `use std;` in order to write fully qualified names like
+> `std::env::args()`?
+
+Yes, except in the toplevel of a crate. Weird. :(
+
+The reason is that every crate behaves as though it has an implicit `extern crate std;`
+and that form only adds the crate to the toplevel. It must be explicitly imported
+into each submodule.
+
+The names exported by the prelude are implicitly imported into *every* module,
+but `std` is not among them.
+
+You can write `::std` anywhere.
+
+> What's the prelude like? How does it get included?
+
+This is documented under [std::prelude](http://doc.rust-lang.org/std/prelude/index.html).
+
+> Can a block contain a module?
+
+Yes!
+
+    println!("{}", {
+        mod x { pub const Q: i32 = 3; }
+        x::Q
+    });
+
+Why not, right? Macros will find a use for every scrap of orthogonality
+the language gives us.
+
 > A path can start with `<` *type* `>::`. What does that do?
 
 @@@
@@ -544,6 +565,23 @@ type and a value.
 > `other_mod::MyFancyEnum` is an enum with some public constructors. Are
 > the constructors automatically exposed by my module too? Is there a
 > way to make them not be?
+
+@@@
+
+> When is a non-`pub` member of a module visible from another module?
+
+I don't know, but certainly:
+
+    mod a {
+        pub struct X { f: i32 }
+        mod b { /* X::f is accessible here */ }
+    }
+    mod c { /* X::f is not accessible here */
+
+@@@
+
+> Can you make the fields of a tuple-like struct public?
+> What about individual arms of an `enum`?
 
 @@@
 
