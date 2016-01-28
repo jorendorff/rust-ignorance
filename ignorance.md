@@ -1109,20 +1109,44 @@ The definition of `assert!` is:
 
 Or something to that effect.
 
-> Macros are hygienic, right? If a macro takes an `expr` argument,
+> Macros are hygienic, right?
+
+Only very slightly!
+
+I'm still figuring out the rules, but it seems like `let` variables are the
+only names that get any kind of hygiene marker at all.
+
+You can't generate code, for example, that refers to names that are private to
+the module where the macro was defined. You'll have to make them public.
+Then you can refer to them using `$crate`.
+
+>  Are closure and fn arguments protected by hygiene markers? Local items?
+
+@@@
+
+> If a macro takes an `expr` argument,
 > and the actual argument contains a `break`, but the macro also
 > inserts a loop, then which loop does the `break` break out of?
 > (I guess hygiene would suggest it breaks out of the innermost loop
 > lexically evident in the context in which the macro is invoked?
 > Not actually totally sure of myself there.)
 
-Macros are not very hygienic!
+Lol, not even close. `macro_rules!` macros are nowhere near that hygienic.
 
-You can't generate code, for example, that refers to names that are private to
-the scope where the macro was defined. You'll have to make them public
-and import them into the scope where the macro is used.
+    macro_rules! rep {
+        ($i:ident, $v:ident, $r:expr, $s:expr) => {
+            for $v in $r {
+                println!("{} {}", $i, $v);
+                $s
+            }
+        }
+    }
 
-@@@
+    fn main() {
+        for i in 1..6 {
+            rep!(i, x, 1..6, { if i == 3 && x == 3 { break; }});
+        }
+    }
 
 > Is `my_macro! BONK` a possible macro-use syntax?
 
@@ -1130,7 +1154,22 @@ and import them into the scope where the macro is used.
 
 > What about `my_macro!(X)` where X is required to be a single token tree?
 
-@@@
+Yes, a `macro_rules` macro can capture a token tree:
+
+    macro_rules! my_macro {
+        ($x:tt) => { ... }
+    }
+
+I wrote a `json!` macro that works that way and is actually kind of neat.
 
 
 ## Unsafe code
+
+> Does Rust have any strict-aliasing rules that unsafe code must follow?
+
+@@@
+
+> Is it Undefined Behaviour if unsafe code changes a value (via a pointer)
+> while a reference exists that points to it?
+
+@@@
