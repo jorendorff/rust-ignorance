@@ -1,53 +1,22 @@
 ## License
 
-I'm afraid this one is copyright me and all rights reserved for now.
-Not my usual thing.
+Hi!
+
+Feel free to use these questions for whatever you like!
+That's the important part, right?
+
+I'm afraid the answers are copyright me and all rights reserved for now.
+I know, not my usual thing.
 
 
 ## Random questions
 
-> Does `assert!(foo)` print a message containing the expression source
-> code (`"foo"`) if the assertion fails?
+> Does Rust have static assertions?
 
-Yes - but the expression may have different whitespace, and comments are
-stripped, as though it's reconstructed from the string of tokens.
+@@@
 
-    assert!(a==b);
-
-    thread '<main>' panicked at 'assertion failed: a == b', src/main.rs:4
-
-The `assert!` macro uses the `stringify!` macro to construct this string.
-
-> What kind of code does `assert!(x)` expand to?
-> How can I tell what a macro expands to, generally?
-
-Macros are documented in the most straightforward way possible:
-the documentation literally includes complete source code for the macro,
-albeit with the whitespace scrambled.
-
-The definition of `assert!` is:
-
-    macro_rules! assert {
-        ($cond: expr) => (
-            if !$cond {
-                panic!(concat!("assertion failed: ", stringify!($cond)));
-            }
-        );
-        ($cond: expr, $($arg: tt)+) => (
-            if !$cond {
-                panic!($($arg)+);
-            }
-        );
-    }
-
-Or something to that effect.
-
-> Macros are hygienic, right? If a macro takes an `expr` argument,
-> and the actual argument contains a `break`, but the macro also
-> inserts a loop, then which loop does the `break` break out of?
-> (I guess hygiene would suggest it breaks out of the innermost loop
-> lexically evident in the context in which the macro is invoked?
-> Not actually totally sure of myself there.)
+> Can you use `impl` to add methods to a type defined in another module?
+> Another crate?
 
 @@@
 
@@ -182,6 +151,57 @@ The syntax of a block is `{ stmt* expr? }`.
 A statement is either a `let` declaration,
 an item declaration (a nested `fn`, `struct`, or `enum`),
 or an *expression statement* (just an expression followed by a semicolon).
+
+Two rules explain all the weirdness:
+
+1.  **The semicolon after an expression statement is optional
+    if the expression is "complete"**—that is,
+    it's an unparenthesized `if`, `match`, `loop`, `while`, `for`, or block expression.
+    ("Complete" expressions always end with `}`,
+    but `match x {_=>1} + match y {_=>2}` is not complete,
+    even though it starts with a keyword and ends with `}`.)
+
+    **If the semicolon is omitted,
+    the type of the expression is required to be `()`.**
+    (This is a nice rule because it means you can drop the semicolon after
+    an `if` expression as long as you put semicolons at the end of each
+    of the `if`-expression's blocks.)
+
+    If you actually write a semicolon, the type of the expression
+    can be whatever you want; it'll be ignored.
+
+2.  Because of rule 1, there is an ambiguity in block syntax
+    whenever a "complete" expression is immdiately followed by an operator
+    that's both a unary operator and a binary operator.
+
+        fn f() -> i32 {
+            if a {
+                b();
+            } else {
+                c();
+            }
+            -1
+        }
+
+    We don't want this to parse as `(if ...) - 1` which is nonsense
+    (and wouldn't type-check). It has to parse as an `if` *statement*
+    followed by the expression `-1`.
+
+    Therefore we have rule 2: **In a block, an expression
+    or expression-statement that begins with a "complete" expression
+    consists only of that expression.** Any subsequent tokens
+    in the block must be parsed as part of the next expression or statement.
+
+    (But the way this is implemented in the parser seems to be weirder
+    and more work than I can justify in my head.)
+
+    The consequences of this rule can be weird.
+
+        { 1 + if a { 1 } else { 0 } + 1 }  // ok
+        {     if a { 1 } else { 0 } + 1 }  // error: unexpected token: `+`
+        {    (if a { 1 } else { 0 })+ 1 }  // ok
+
+> OK. Is a macro invocation with curly braces a "blocky" expression?
 
 @@@
 
@@ -403,6 +423,41 @@ Then tell the type checker that a float literal's type has that trait (as a boun
 @@@
 
 
+### Method calls
+
+> Can a method that takes its `self` argument by value be called via `Deref`?
+> For example, `Box::new(Pickle).chomp()`?
+
+Yes, if you own the `Box`, you can consume it in this way.
+
+    struct Pickle;
+    impl Pickle {
+        fn chomp(self) { println!("chomp!"); }
+    }
+
+    fn main() {
+        let b = Box::new(Pickle);
+        b.chomp();  // chomp!
+    }
+
+Chomping `b` consumes the `Box` as well as the `Pickle`.
+
+But it only works for `Box`!
+
+    struct Carton<T>(T);
+    impl<T> std::ops::Deref for Carton<T> {
+        type Target = T;
+        fn deref(&self) -> &T { &self.0 }
+    }
+
+    fn main() {
+        let b = Carton(Pickle);
+        b.chomp();  // error: cannot move out of borrowed content
+    }
+
+What's needed to make this work would be a third `Deref` trait, `DerefInto` or `DerefOnce`.
+
+
 ### `if` and `match`
 
 > What are the types involved in an `if` expression?
@@ -551,6 +606,19 @@ No. `error: expected ident`.
 No. The error message is:
 
     error: no base type found for inherent implementation; implement a trait or new type instead
+
+> Can the syntax `type X = Y;` appear in an `impl` that isn't a trait `impl`?
+
+No:
+
+    struct K;
+    impl K {
+        type J = u32;  // error: associated types are not allowed in inherent impls
+    }
+
+According to `rustc --explain E0202`, inherent associated types were
+part of [RFC 195](https://github.com/rust-lang/rfcs/pull/195) but have
+never been implemented.
 
 
 ## Terminology
@@ -826,6 +894,60 @@ You can write `::std` anywhere.
 
 This is documented under [std::prelude](http://doc.rust-lang.org/std/prelude/index.html).
 
+> Are names from enclosing modules automatically visible in nested modules?
+
+No.
+
+    mod a {
+        pub fn g() -> i32 { 123 }
+        pub mod b {
+            pub fn f() -> i32 { a::g() }  // error: Use of undeclared type or module `a`
+        }
+    }
+
+    fn main() {
+        println!("{}", a::b::f());
+    }
+
+You have to import them.
+
+> In a `use` declaration, what's in scope?
+
+They aren't like other paths.
+
+Setting aside the relative import forms `super::foo` and `self::bar`,
+the paths that appear in `use` declarations are "absolute":
+the first step in the path must be `std`
+or a crate explicitly opened with `extern crate foo;` at toplevel.
+
+> Can you `let`-declare a name that, *later* in the same block,
+> is declared as an item? Does the `let` declaration shadow the item?
+
+Yes and yes.
+
+    fn main() {
+        x();  // fn
+        let x = || println!("let");
+        x();  // let
+        fn x() { println!("fn"); }
+        x();  // let
+    }
+
+> Is it allowed to use a leading `::` in a `use` declaration?
+
+Yes:
+
+    use ::std::mem::swap;
+
+But it doesn't do anything special.
+Paths in `use` declarations are automatically absolute paths.
+
+> Is `::<` one token or two?
+
+Two:
+
+    Vec::/**/<i32>::new()    // ok
+
 > Can a block contain a module?
 
 Yes!
@@ -837,6 +959,31 @@ Yes!
 
 Why not, right? Macros will find a use for every scrap of orthogonality
 the language gives us.
+
+> Can a module declared in a block be the target of `use` declarations?
+
+Not from outside it:
+
+    {
+        mod a { pub fn f() {} }
+        use self::a::f;  // error: unresolved import
+        println!("{:?}", f());
+    }
+
+Within the local module, a relative import (`use super::m` or `self::m`)
+will do the trick:
+
+    {
+        mod a {
+            fn f() {}
+            pub mod b {
+                use super::f;  // works, refers to a::f above
+                pub fn g() { f() }
+            }
+        }
+        println!("{:?}", a::b::g());
+    }
+
 
 > A path can start with `<` *type* `>::`. What does that do?
 
@@ -858,13 +1005,6 @@ It seems there are two namespaces: one for types and one for values.
 Note that a declaration `struct X;` or `struct X(u32);` declares both a
 type and a value.
 
-> Suppose I do `pub use other_mod::MyFancyEnum;` where
-> `other_mod::MyFancyEnum` is an enum with some public constructors. Are
-> the constructors automatically exposed by my module too? Is there a
-> way to make them not be?
-
-@@@
-
 > When is a non-`pub` member of a module visible from another module?
 
 I don't know, but certainly:
@@ -877,8 +1017,24 @@ I don't know, but certainly:
 
 @@@
 
-> Can you make the fields of a tuple-like struct public?
-> What about individual arms of an `enum`?
+> Can the fields of a tuple struct be public?
+
+Yes:
+
+    pub struct A(pub i32, pub i32);
+
+If any field of a tuple struct isn't visible to you,
+then you can't invoke it as a constructor.
+
+> Can individual variants of an `enum` be `pub`?
+
+No, `pub` isn't grammatically allowed inside an `enum` declaration.
+
+> Can a module export a type that's implemented as an `enum`
+> (and some methods)
+> without also exporting all the constructors?
+
+I don't think so!
 
 @@@
 
@@ -913,3 +1069,68 @@ I don't know, but certainly:
 > crate`?
 
 @@@
+
+
+## Macros
+
+> Does `assert!(foo)` print a message containing the expression source
+> code (`"foo"`) if the assertion fails?
+
+Yes - but the expression may have different whitespace, and comments are
+stripped, because the message is reconstituted from the parsed expression AST.
+
+    assert!(a==b);
+
+    thread '<main>' panicked at 'assertion failed: a == b', src/main.rs:4
+
+The `assert!` macro uses the `stringify!` macro to construct this string.
+
+> What kind of code does `assert!(x)` expand to?
+> How can I tell what a macro expands to, generally?
+
+Macros are documented in the most straightforward way possible:
+the documentation literally includes complete source code for the macro,
+albeit with the whitespace scrambled.
+
+The definition of `assert!` is:
+
+    macro_rules! assert {
+        ($cond: expr) => (
+            if !$cond {
+                panic!(concat!("assertion failed: ", stringify!($cond)));
+            }
+        );
+        ($cond: expr, $($arg: tt)+) => (
+            if !$cond {
+                panic!($($arg)+);
+            }
+        );
+    }
+
+Or something to that effect.
+
+> Macros are hygienic, right? If a macro takes an `expr` argument,
+> and the actual argument contains a `break`, but the macro also
+> inserts a loop, then which loop does the `break` break out of?
+> (I guess hygiene would suggest it breaks out of the innermost loop
+> lexically evident in the context in which the macro is invoked?
+> Not actually totally sure of myself there.)
+
+Macros are not very hygienic!
+
+You can't generate code, for example, that refers to names that are private to
+the scope where the macro was defined. You'll have to make them public
+and import them into the scope where the macro is used.
+
+@@@
+
+> Is `my_macro! BONK` a possible macro-use syntax?
+
+@@@
+
+> What about `my_macro!(X)` where X is required to be a single token tree?
+
+@@@
+
+
+## Unsafe code
