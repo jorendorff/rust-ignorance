@@ -11,6 +11,26 @@ I know, not my usual thing.
 
 ## Random questions
 
+> How can I set a breakpoint in rust-gdb and have it hit? In particular,
+> the program I want to debug is a debug build of rustc.
+
+@@@
+
+> How can I turn on logging for rustc?
+
+@@@
+
+> Is it possible to dump a value using the `Debug` trait from rust-gdb?
+
+@@@
+
+> In general, what is rust-gdb? Is there any documentation for it?
+> Why isn't stock GDB good enough for what Rust is trying to do?
+
+rust-gdb is a script that force-loads some Python pretty-printers
+
+@@@
+
 > Does Rust have static assertions?
 
 @@@
@@ -84,6 +104,34 @@ but in this case, it is not:
 In the latter case, due to an accident of grammar,
 the `for`-expression is parsed as a final expression
 rather than as a statement. I bet that's it.
+
+@@@
+
+> Are there separate type and value namespaces in Rust?
+
+Sure seems like it:
+
+    type X = i64;
+    const X: bool = true;   // totally OK
+    fn main() {
+        println!("{}", X);  // true
+    }
+
+Also, the error messages when you use a type where a value was expected, or
+vice versa, suggest that when Rust expects one, it forgets the other ever
+existed.
+
+    println!("{}", i64);  // error: unresolved name `i64`
+
+    let x = 13; x::new();  // error: use of undeclared type or module `x`
+
+> Which type names also name values?
+
+Structs. (Type aliases for structs don't count!)
+
+> Are modules in the value namespace, the type namespace, or both?
+
+Only the type namespace.
 
 @@@
 
@@ -591,6 +639,12 @@ They don't derive `Clone` or `Copy` unless you ask for them.
 
 No. `error: expected ident`.
 
+> Given `struct X { a: i64, b: bool}`, can you call `X` like a function,
+> `X(32, true)`?
+
+No.
+
+
 
 ## Traits
 
@@ -620,6 +674,11 @@ According to `rustc --explain E0202`, inherent associated types were
 part of [RFC 195](https://github.com/rust-lang/rfcs/pull/195) but have
 never been implemented.
 
+> In this issue <https://github.com/rust-lang/rust/issues/31299>,
+> what is going on?
+
+@@@
+
 
 ## Terminology
 
@@ -629,7 +688,7 @@ They are called values.
 
 > What are the branches of an `enum` called? Variants?
 
-@@@
+Yes.
 
 > What are the member fields of enums called? Fields?
 
@@ -637,7 +696,7 @@ They are called values.
 
 
 
-## Moves, borrowing, lifetimes
+## Moves, borrowing, ownership, lifetimes
 
 > What invariants exactly does the borrow checker enforce?
 
@@ -674,6 +733,48 @@ I'm not sure, but here are things I know it does enforce:
 > How does the compiled code know whether or not it has already been dropped?
 
 @@@
+
+> Can values be moved out of structs, tuples, arrays, and enums?
+
+A value can definitely be moved out of an aggregate via pattern matching.
+It consumes the aggregate:
+
+    // tuples
+    let v = (a, z)
+    let (aa, zz) = v;  // moves v.0 -> aa, v.1 -> zz, uses up v
+
+    // structs
+    let v = a .. z;
+    let Range { start: aa, stop: zz } = v;  // moves v.start -> aa, v.stop -> zz, uses up v
+
+    // enums - a little different because matching an enum is refutable.
+    // We show `if let`, but `match` would also work.
+    let v = Some(a);
+    if let Some(aa) = v { ... }   // moves a -> aa, uses up v
+
+(Arrays would work too, except that slice patterns are not stable yet.)
+
+In any of these cases, using `ref` in the pattern
+will cause the original value *not* to be consumed;
+nothing will be moved out of it after all.
+Instead all the bindings are references to parts of the original.
+
+Using `ref` in a pattern is called "binding by-ref".
+Not using it is "binding by-move".
+It is an error to bind by-move and by-ref in the same pattern.
+(But oddly enough, it's OK to bind by-ref in some arms of a `match`
+and by-value in others.
+Guessing:
+in by-value arms, the value is used up *before* the arm-consequent is evaluated;
+in by-ref arms, it is used up *after*, when the references expire.
+
+In addition, for structs and tuples only, you can move individual fields
+out of a value you own, like an argument or local variable (or
+a value that has been moved into a `move` closure, I think).
+
+    let v = (a, z);
+    let aa = v.0;   // moves v.0 -> aa, uses up v.0 only
+    let bb = v.1;   // moves v.1 -> bb, now v is completely moved
 
 > If a variable is declared without an initializer, can it be initialized twice?
 >
@@ -853,6 +954,33 @@ Good question.
 > anything left?
 
 @@@
+
+
+## Closures
+
+> Can you move a closure into a `Box<Fn()>` and then call it?
+
+Sure can.
+
+    let b: Box<Fn()> = Box::new(|| println!("woof"));
+    b();  // woof!
+
+More elaborately:
+
+    fn make_adder(n: i32) -> Box<Fn(i32) -> i32> {
+        Box::new(move |i| i + n)
+    }
+
+    let adder = make_adder(3);
+    assert_eq!(adder(100), 103);
+    assert_eq!(adder(adder(100)), 106);
+
+> Hmm. Integers are copyable... so can you drop the `move` keyword from that
+> closure?
+
+No, the `move` is necessary. If you drop it, `n` is borrowed by default (even
+though it's small and copyable) so the closure would not be allowed to outlive
+`n` the way it does here.
 
 
 ## Statics
