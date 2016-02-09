@@ -11,8 +11,20 @@ I know, not my usual thing.
 
 ## Random questions
 
+> Is it just my system that can't build 32-bit executables? Or is it a thing?
+
+I was ultimately able to build 32-bit executables by downloading the whole
+32-bit version of Rust. Not by cross-compiling. It's possible that a
+cross-compiler for i686 is built into x86_64 rust, but it seems no 32-bit
+libstd is included.
+
+@@@
+
 > How can I set a breakpoint in rust-gdb and have it hit? In particular,
 > the program I want to debug is a debug build of rustc.
+
+After building `--enable-debug`, I was able to `break main` and do a few more
+simple things. I don't remember if I ever got a breakpoint to hit.
 
 @@@
 
@@ -25,9 +37,15 @@ I know, not my usual thing.
 @@@
 
 > In general, what is rust-gdb? Is there any documentation for it?
+
+rust-gdb is a script that force-loads some Python pretty-printers.
+
+@@@
+
 > Why isn't stock GDB good enough for what Rust is trying to do?
 
-rust-gdb is a script that force-loads some Python pretty-printers
+GDB doesn't load arbitrary Python extensions unless the user opts in,
+for security reasons.
 
 @@@
 
@@ -204,10 +222,13 @@ Two rules explain all the weirdness:
 
 1.  **The semicolon after an expression statement is optional
     if the expression is "complete"**—that is,
-    it's an unparenthesized `if`, `match`, `loop`, `while`, `for`, or block expression.
+    it's an unparenthesized `if`, `match`, `loop`, `while`, `for`, or block expression,
+    or a macro use with curly braces.
     ("Complete" expressions always end with `}`,
     but `match x {_=>1} + match y {_=>2}` is not complete,
-    even though it starts with a keyword and ends with `}`.)
+    even though it starts with a keyword and ends with `}`.
+    *Wait, that's nonsensical because the `+` isn't allowed
+    after the first match-expression. Need a better example here.*)
 
     **If the semicolon is omitted,
     the type of the expression is required to be `()`.**
@@ -235,6 +256,11 @@ Two rules explain all the weirdness:
     (and wouldn't type-check). It has to parse as an `if` *statement*
     followed by the expression `-1`.
 
+    (Other confusable operators:
+    address-of `&` vs. bitwise `&`,
+    dereferencing `*` vs. multiplying `*`,
+    grouping parentheses vs. function-call parentheses.)
+
     Therefore we have rule 2: **In a block, an expression
     or expression-statement that begins with a "complete" expression
     consists only of that expression.** Any subsequent tokens
@@ -249,14 +275,24 @@ Two rules explain all the weirdness:
         {     if a { 1 } else { 0 } + 1 }  // error: unexpected token: `+`
         {    (if a { 1 } else { 0 })+ 1 }  // ok
 
-> OK. Is a macro invocation with curly braces a "blocky" expression?
+> OK. Is a macro invocation with curly braces a "complete" expression?
+
+Yes. Or, if the macro happens to be `macro_rules!`, it's not an expression at all.
+
+> Why isn't an `unsafe` expression a "complete" expression?
 
 @@@
+
+> How does this semicolon thing work anyway? Is `if x { f(); }` an expression?
+
+It is; see above.
 
 > What if you do `let x = if cond { V1 };` with no `else` clause?
-> What is the type? What if the type has a Default?
+> What is the type? What if the type of V1 has a `Default`?
 
-@@@
+An omitted `else` clause is like `else {}`.
+The type of the `else` branch is `()`.
+It doesn't matter what type V1 is.
 
 > How is overflow handled with unsigned integer types?
 
@@ -264,16 +300,40 @@ The same as for signed integer types.
 
 > Is there subslice syntax `&x[y..z]`? If so, how is it handled in the grammar?
 
-@@@
+Yes, slicing works.
 
-> How does this semicolon thing work anyway? Is `if x { f(); }` an expression?
+As far as the grammar is concerned, three separate productions here:
+`& _` composed with `_ [ _ ]` composed with `_ .. _`.
+
+But I'm pretty sure the compiler desugars all this to *two* method calls, not three?
+I'll have to experiment to figure out exactly what happens here.
 
 @@@
 
 > Is there a nice error message if you type `genfn<u32>()` instead of
 > `genfn::<u32>()`?
 
-@@@
+It's not bad.
+
+    rusteval.rs:2:39: 2:45 error: chained comparison operators require parentheses
+    rusteval.rs:2 fn main() { let v = {std::mem::size_of<i32>()}; println!("{:?}", v); }
+                                                        ^~~~~~
+    rusteval.rs:2:39: 2:45 help: use `::<...>` instead of `<...>` if you meant to specify type arguments
+    rusteval.rs:2:40: 2:43 error: unresolved name `i32` [E0425]
+    rusteval.rs:2 fn main() { let v = {std::mem::size_of<i32>()}; println!("{:?}", v); }
+                                                         ^~~
+    rusteval.rs:2:40: 2:43 help: run `rustc --explain E0425` to see a detailed explanation
+    rusteval.rs:2:22: 2:39 error: binary operation `<` cannot be applied to type `fn() -> usize {core::mem::size_of}` [E0369]
+    rusteval.rs:2 fn main() { let v = {std::mem::size_of<i32>()}; println!("{:?}", v); }
+                                       ^~~~~~~~~~~~~~~~~
+    rusteval.rs:2:22: 2:39 help: run `rustc --explain E0369` to see a detailed explanation
+    rusteval.rs:2:22: 2:39 note: an implementation of `std::cmp::PartialOrd` might be missing for `fn() -> usize {core::mem::size_of}`
+    rusteval.rs:2 fn main() { let v = {std::mem::size_of<i32>()}; println!("{:?}", v); }
+                                       ^~~~~~~~~~~~~~~~~
+    error: aborting due to previous error
+
+The first "help" message is on point. It can get buried by the surrounding
+evidence of rustc's utter confusion.
 
 > Is `b'\xff'` a legal byte literal?
 
@@ -285,7 +345,10 @@ in strings.
 
 > Does Rust have a `sizeof` operator or equivalent?
 
-@@@
+There's a builtin function: `std::mem::size_of::<T>()`.
+Weirdly, it is not a `const fn` currently.
+
+Also `align_of`.
 
 > Can both sides of `@` be patterns, or is the lhs required to be a single identifier?
 
@@ -380,6 +443,32 @@ the type of your binding is `&T`.
 > (The reverse is possible using a cast: `Red as i32` is `1`.)
 
 I don't think this is possible short of `std::mem::transmute()`.
+
+@@@
+
+## Patterns, `match`, `if let`, pattern matching
+
+> Is an `@` pattern considered refutable regardless of whether the rhs
+> of `@` is refutable? (surely not)
+
+@@@
+
+> Can `@` be used with `ref`, like:  `ref point @ (ref x, ref y)`?
+
+@@@
+
+> Can `@` be used on non-copyable types at all? Perhaps if the fields
+> actually matched on its rhs are all copyable?
+
+@@@
+
+> `|` cannot normally be used in patterns outside of `match`.  But what
+> if the last alternative is irrefutable, as in `let (3 | _) = 4;`?
+> (That is: is the restriction syntactic or semantic?)
+
+@@@
+
+> Is `&(0...100)` a valid pattern?
 
 @@@
 
@@ -504,6 +593,12 @@ But it only works for `Box`!
     }
 
 What's needed to make this work would be a third `Deref` trait, `DerefInto` or `DerefOnce`.
+
+> Suppose I define a new struct `Vec3`. Is it possible to overload
+> multiplication by a primitive type, such that `x * v` works when `x: f64`,
+> `v: Vec3`?
+
+Yep. `impl Mul<Vec3> for f32` just works!
 
 
 ### `if` and `match`
@@ -1169,7 +1264,7 @@ I don't think so!
 
 ## Crates
 
-> What exactly is a crate?
+> What exactly is a crate? What's an rlib and what is in it?
 
 @@@
 
@@ -1186,8 +1281,25 @@ I don't think so!
 
 @@@
 
-> How does syntax extension sharing across crates work, exactly? (Not
-> smart enough to have a precise question yet.)
+> How are macros "linked" across crates? Does the answer mean that dependencies
+> must be compiled all the way down to an rlib before compilation on downstream
+> crates begins?
+
+@@@
+
+> How are other syntactic extensions "linked" across crates? (It's unstable, I
+> know.)
+
+@@@
+
+> Suppose a dependency of my project updates from 1.4.7 to 1.4.8. How do I tell
+> Cargo to update? Do I have to recompile my project?
+
+@@@
+
+> What I'm getting at with all of the above is, what does it mean for a point
+> release of a Rust crate to be "compatible" with the previous point release?
+> Is there a "source compatible" vs. "binary compatible" distinction in Rust?
 
 @@@
 
@@ -1278,6 +1390,19 @@ Lol, not even close. `macro_rules!` macros are nowhere near that hygienic.
 
 > Is `my_macro! BONK` a possible macro-use syntax?
 
+I don't think that's something the parser would accept at all, no.
+
+There is surprisingly specific macro syntax for specific contexts:
+expression macros, as in `(3 + f![])`, can use `()` or `[]` or `{}`
+and no semicolon is expected or allowed for any of the three.
+Declaration macros are different:
+an identifier token is permitted before the mandatory delimited token-tree,
+and if the delimited token-tree uses `()` or `[]`,
+then a semicolon is required after.
+
+Macros are permitted in a *lot* of different contexts;
+I'll have to look to see what patterns there are.
+
 @@@
 
 > What about `my_macro!(X)` where X is required to be a single token tree?
@@ -1292,6 +1417,13 @@ I wrote a `json!` macro that works that way and is actually kind of neat.
 
 
 ## Unsafe code
+
+> The documentation for `std::mem::transmute::<T, U>()` says "Both types must
+> have the same size." What if they don't?
+
+Compile-time error.
+
+(This can be abused to create static assertions.)
 
 > Does Rust have any strict-aliasing rules that unsafe code must follow?
 
