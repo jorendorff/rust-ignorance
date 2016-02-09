@@ -222,8 +222,8 @@ Two rules explain all the weirdness:
 
 1.  **The semicolon after an expression statement is optional
     if the expression is "complete"**—that is,
-    it's an unparenthesized `if`, `match`, `loop`, `while`, `for`, or block expression,
-    or a macro use with curly braces.
+    it's an unparenthesized `if`, `match`, `loop`, `while`, `for`,
+    `unsafe`, or block expression, or a macro use with curly braces.
     ("Complete" expressions always end with `}`,
     but `match x {_=>1} + match y {_=>2}` is not complete,
     even though it starts with a keyword and ends with `}`.
@@ -278,10 +278,6 @@ Two rules explain all the weirdness:
 > OK. Is a macro invocation with curly braces a "complete" expression?
 
 Yes. Or, if the macro happens to be `macro_rules!`, it's not an expression at all.
-
-> Why isn't an `unsafe` expression a "complete" expression?
-
-@@@
 
 > How does this semicolon thing work anyway? Is `if x { f(); }` an expression?
 
