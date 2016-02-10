@@ -444,29 +444,63 @@ I don't think this is possible short of `std::mem::transmute()`.
 
 ## Patterns, `match`, `if let`, pattern matching
 
-> Is an `@` pattern considered refutable regardless of whether the rhs
-> of `@` is refutable? (surely not)
+> Is an `@` pattern refutable?
 
-@@@
+Well, hang on.
+I used to think there was a hard syntactic distinction
+between refutable and irrefutable patterns.
+I now think Rust is smarter than that; it can statically compute
+a conservative approximation `(<=)` of the relation
+
+    cover :: [Pattern] -> Pattern -> Bool
+
+such that ``priorPatterns `cover` p`` iff for all v such that p matches v,
+there is some q in priorPatterns that also matches v.
+
+This is the relation Rust uses to flag two opposing errors:
+
+*   A match arm is covered by previous unguarded match arms
+    ("error: unreachable pattern")
+
+*   The unguarded arms of a `match` fail to cover all possible values.
+    That is, they do not cover the wildcard pattern `_`.
+    ("error: non-exhaustive patterns")
+
+For the purpose of computing this relation, I'm sure Rust just ignores the `@`
+and uses the pattern on the rhs.
 
 > Can `@` be used with `ref`, like:  `ref point @ (ref x, ref y)`?
 
-@@@
+Even with `ref`, `@` can't be used with a right-hand pattern
+that has any pattern bindings in it at all.
 
-> Can `@` be used on non-copyable types at all? Perhaps if the fields
-> actually matched on its rhs are all copyable?
+But `@` can be used with `ref`:
 
-@@@
+    match (2, 3) {
+        ref point @ (2, _) => format!("ok! {:?}", point),
+        _ => panic!("FAIL")
+    }
+
+> Can `@` be used on non-copyable types at all?
+
+Sure. This is presumably why the right-hand pattern can't have bindings:
+the matched value is moved into the new variable named on the lhs of `@`.
 
 > `|` cannot normally be used in patterns outside of `match`.  But what
 > if the last alternative is irrefutable, as in `let (3 | _) = 4;`?
 > (That is: is the restriction syntactic or semantic?)
 
-@@@
+It's syntactic. `let (3 | _) = 4;` is a syntax error.
 
 > Is `&(0...100)` a valid pattern?
 
-@@@
+No. Extra parentheses are not allowed in patterns, and here `...` binds tighter than `&`.
+
+There's no operator precedence in patterns.
+The grammar has one big `pat` nonterminal with a ton of productions, including:
+
+    pat: '&' pat
+    pat: pat-range-end '...' pat-range-end
 
 
 ## Declarations
