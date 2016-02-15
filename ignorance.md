@@ -454,8 +454,8 @@ a conservative approximation `(<=)` of the relation
 
     cover :: [Pattern] -> Pattern -> Bool
 
-such that ``priorPatterns `cover` p`` iff for all v such that p matches v,
-there is some q in priorPatterns that also matches v.
+such that ``priorPatterns `cover` p`` iff for all v matched by p,
+some q in priorPatterns also matches v.
 
 This is the relation Rust uses to flag two opposing errors:
 
