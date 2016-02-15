@@ -502,6 +502,18 @@ The grammar has one big `pat` nonterminal with a ton of productions, including:
     pat: '&' pat
     pat: pat-range-end '...' pat-range-end
 
+> `ref` can't be used in function parameters, right?
+
+Well, it can:
+
+    fn g(ref mut x: i32) { *x += 1; }  // compiles fine
+
+But parameters are still always passed by move/copy.
+
+    let k = 1;   // note: not mut
+    g(k);        // works fine (copied in)
+    assert_eq(k, 1);  // the original is unchanged
+
 
 ## Declarations
 
