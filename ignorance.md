@@ -514,6 +514,20 @@ But parameters are still always passed by move/copy.
     g(k);        // works fine (copied in)
     assert_eq(k, 1);  // the original is unchanged
 
+> In the `else` block of `if Some(ref a) = v {} else { v = Some(x); }`,
+> is `v` considered borrowed?
+
+No. It's not considered borrowed in the equivalent `match` expression, either:
+
+    match v {
+        Some(ref a) => {}
+        _ => v = Some(d)
+    }
+
+Here the first `v` has to be an l-value, because the first arm borrows a field of it.
+But in the second arm we can just assign to v,
+which wouldn't be allowed if we had borrowed any part of it.
+
 
 ## Declarations
 
