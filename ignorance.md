@@ -1126,6 +1126,10 @@ destructors.
 
 @@@
 
+> Is it a big deal that Rust doesn't have mutable global variables?
+
+@@@
+
 
 ## Modules, paths, names, namespaces
 
