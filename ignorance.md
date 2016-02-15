@@ -697,6 +697,10 @@ Yes:
 Of course such an expression can never be evaluated,
 because you would have to have already produced a value of the empty `Nonesuch` type,
 a logical impossibility.
+The above function can't be called.
+
+(Because the type of `match ns {}` is `!`, in the above code it is also OK
+to change the return type of `what` to any type you choose; see below.)
 
 
 ### Weird types
@@ -724,9 +728,35 @@ you can just `Box::new(10) as Box<MyTrait>` if the right `impl` exists.
 
 ### Diverging expressions (`!`)
 
-> Can a diverging expression be used as a function parameter? What is its type?
+> So an expression that diverges can be "used as" any type at all?
 
-Yes, it can, and I suppose its type is inferred.
+Yep.
+
+    let x: String = loop {};  // ok
+
+    fn f() -> Vec<f32> { loop {} }  // ok
+
+> OK. But why does this compile?
+>
+>     fn f() -> i32 { loop {}; }
+>
+> Doesn't the semicolon make that a statement, and the type of the block `()`?
+> It also works if I add another statement after that:
+>
+>     fn f() -> i32 { loop {}; (); }  // ok (warning: unreachable statement)
+
+If any statement of a block diverges, the whole block diverges.
+
+(The systems of relations that govern Rust's type systems and such
+are designed by some pretty good applied mathematicians.
+If some rule like this makes sense,
+they've identified it and incorporated it into the language.)
+
+Because the function body block diverges, it can be used as an `i32`, no problem.
+
+> Can a diverging expression be used as an argument to a function? What is its type?
+
+Yes, it can. The type is inferred.
 
 This program:
 
