@@ -51,10 +51,24 @@ for security reasons.
 
 > Does Rust have static assertions?
 
-@@@
+No.
+
+I think the best workaround is to add a test.
+
+There was once a weird feature called `static_assert!()` but it was removed.
+
+> Can you put a `#[test] fn` in the middle of a block?
+
+No, Rust won't recognize it as a test.
+
+> How exactly does Cargo run `#[test]` tests?
+
+Testing support is built into `rustc`;
+use `--test` to build a test executable.
+(`--crate-type=lib --test` compiles the whole library and links it into a test executable.)
 
 > Can you use `impl` to add methods to a type defined in another module?
-> Another crate?
+> Another crate? Built-in types?
 
 @@@
 
@@ -346,10 +360,6 @@ Weirdly, it is not a `const fn` currently.
 
 Also `align_of`.
 
-> Can both sides of `@` be patterns, or is the lhs required to be a single identifier?
-
-@@@
-
 > Does Rust have labeled `break` and `continue`?
 
 Yes.
@@ -362,7 +372,9 @@ Yes.
 > Interesting. Is that `'foo` also a lifetime? Can it be used as a
 > lifetime parameter? (If so, is that useful?)
 
-@@@
+No, it's not a lifetime parameter.
+
+It might be useful pedagogically.
 
 > In the parser, in the `ast` module, we have:
 >
@@ -446,6 +458,8 @@ I don't think this is possible short of `std::mem::transmute()`.
 
 > Is an `@` pattern refutable?
 
+Yes, if the right-hand pattern is refutable.
+
 Well, hang on.
 I used to think there was a hard syntactic distinction
 between refutable and irrefutable patterns.
@@ -457,7 +471,7 @@ a conservative approximation `(<=)` of the relation
 such that ``priorPatterns `cover` p`` iff for all v matched by p,
 some q in priorPatterns also matches v.
 
-This is the relation Rust uses to flag two opposing errors:
+This `(<=)` is the relation Rust uses to flag two opposing errors:
 
 *   A match arm is covered by previous unguarded match arms
     ("error: unreachable pattern")
@@ -468,6 +482,10 @@ This is the relation Rust uses to flag two opposing errors:
 
 For the purpose of computing this relation, I'm sure Rust just ignores the `@`
 and uses the pattern on the rhs.
+
+> Can both sides of `@` be patterns, or is the lhs required to be a single identifier?
+
+Single identifier.
 
 > Can `@` be used with `ref`, like:  `ref point @ (ref x, ref y)`?
 
@@ -514,7 +532,7 @@ But parameters are still always passed by move/copy.
     g(k);        // works fine (copied in)
     assert_eq(k, 1);  // the original is unchanged
 
-> In the `else` block of `if Some(ref a) = v {} else { v = Some(x); }`,
+> In the `else` block of `if let Some(ref a) = v {} else { v = Some(x); }`,
 > is `v` considered borrowed?
 
 No. It's not considered borrowed in the equivalent `match` expression, either:
@@ -527,6 +545,33 @@ No. It's not considered borrowed in the equivalent `match` expression, either:
 Here the first `v` has to be an l-value, because the first arm borrows a field of it.
 But in the second arm we can just assign to v,
 which wouldn't be allowed if we had borrowed any part of it.
+
+Argh! This is reopened, because:
+
+    fn subdir(&mut self, name: &str) -> &mut DirData {
+        match self.dirs.get_mut(name) {
+            Some(subdir) => subdir,
+            None => self.dirs.entry(name.to_string()).or_insert(DirData::new())
+        }
+    }
+
+...fails to compile with "error: cannot borrow `self.dirs` as mutable more than
+once at a time [E0499]".
+
+@@@
+
+> Is `match EXPR { PAT => e1, _ => e2 }` permitted if PAT contains a `ref` pattern
+> and EXPR is not an lvalue?
+
+Yes.
+
+> Can @ be used on self parameters, like this?
+>
+>     fn add(self @ Vec3(x1, y1, z1), Vec3(x2, y2, z2): Vec3) -> Vec3 {
+>         Vec3(x1 + x2, y1 + y2, z1 + z2)
+>     }
+
+No. It is allowed to use `@` with other parameters, but I don't think it's useful.
 
 
 ## Declarations
@@ -860,6 +905,18 @@ never been implemented.
 
 @@@
 
+> Can static methods be called through trait objects?
+
+@@@
+
+> Is "suitable for trait objects" a per-trait or per-method property?
+
+@@@
+
+> If a method returns a Box<Self::T>, can that method be suitable for trait objects?
+
+@@@
+
 
 ## Terminology
 
@@ -1133,6 +1190,18 @@ Good question.
 > Rust program into a Rust-minus-lifetimes program. Remove all lifetime
 > parameters; remove all lifetime annotations from reference types. Is
 > anything left?
+
+@@@
+
+> Are `Deref` coercions applied in cases where a move is going to be needed?
+> For example, suppose we have
+>
+>     impl Q {
+>         fn into_x(self) -> X {...}
+>     }
+>
+> and there's a deref instance `Box<Q> : Deref<Target=Q>`.
+> Then can you call `.into_x()` on a `Box<Q>` that you own?
 
 @@@
 
