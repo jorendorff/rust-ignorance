@@ -26,9 +26,13 @@ libstd is included.
 After building `--enable-debug`, I was able to `break main` and do a few more
 simple things. I don't remember if I ever got a breakpoint to hit.
 
+I seem to recall that `break main` breaks in some glue code;
+`my_crate::main` is the actual main function you want.
+
 @@@
 
-> How can I turn on logging for rustc?
+> How can I turn on logging for rustc (i.e., debug output for the compiler
+> itself)?
 
 @@@
 
@@ -654,7 +658,7 @@ Then tell the type checker that a float literal's type has that trait (as a boun
 
 `&mut T` to `&T` is allowed.
 
-`&T` to `&U` is allowed if `<T as Deref>::Target` is `U`.
+`&T` to `&U` is allowed if `T: Deref<Target=U>`.
 
 `&mut T` to `&mut U` is allowed if `T: DerefMut` and `<T as Deref>::Target` is `U`.
 
