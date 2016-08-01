@@ -65,6 +65,11 @@ There was once a weird feature called `static_assert!()` but it was removed.
 
 No, Rust won't recognize it as a test.
 
+> Can tests have signatures other than `fn() -> ()`?
+
+Nope. Compile-time error, if you're building with `--test`.
+(Without `--test`, tests are not really compiled at all, just parsed.)
+
 > How exactly does Cargo run `#[test]` tests?
 
 Testing support is built into `rustc`;
@@ -218,6 +223,12 @@ You also can't declare a macro to be `pub`. Instead, you have to declare
 To export a macro to other crates, you have to give the macro the
 `#[macro_export]` attribute. This works even if the module in which
 the macro is declared doesn't have `#[macro_use]`.
+
+> How do closures interact with the grammar?
+
+`y * |x| x` is `y` times a closure; `|x| x * y` is a closure that returns `x * y`.
+
+In the grammar I wrote, the latter is ambiguous.
 
 
 ## Statements and expressions
@@ -878,6 +889,19 @@ No.
 
 ## Traits
 
+> Suppose I have `trait Y: X { ... }`. Can I provide the implementation of X's methods
+> inside the `impl Y for T` block?
+
+No.
+
+> Can I `impl Y for T` first, and `impl X for T` afterwards in the same module?
+
+Yes.
+
+> In a different module in the same crate?
+
+Yes.
+
 > Can I add a method to all instances of a trait, without defining a new
 > trait, by saying something like this?
 >
@@ -891,6 +915,40 @@ No. The error message is:
 
     error: no base type found for inherent implementation; implement a trait or new type instead
 
+But there is a way (read on):
+
+> Is it possible to use a trait to add extension methods to another trait?
+
+Yes, you can do this:
+
+    struct Jitterator<T>(T);
+
+    trait MoreIteratorMethods: Iterator + Sized {
+        fn add_jitter(self) -> Jitterator<Self>;
+    }
+
+    impl<X: Iterator> MoreIteratorMethods for X {
+        fn add_jitter(self) -> Jitterator<Self> { Jitterator(self) }
+    }
+
+The new method `add_jitter()` is available on all `Iterator`s
+whenever `MoreIteratorMethods` is in scope.
+
+> Is it possible to have associated functions in a trait that's
+> compatible with trait objects?
+
+Yes. Each trait that's compatible with trait objects is also a
+dynamically-sized type (the trait object type), and you can declare
+methods on that type just like any other type:
+
+    trait Tr {}
+
+    impl Tr {
+        fn is_nice() -> bool { true }
+    }
+
+    assert_eq!(Tr::is_nice(), true);
+
 > Can the syntax `type X = Y;` appear in an `impl` that isn't a trait `impl`?
 
 No:
@@ -903,6 +961,13 @@ No:
 According to `rustc --explain E0202`, inherent associated types were
 part of [RFC 195](https://github.com/rust-lang/rfcs/pull/195) but have
 never been implemented.
+
+> Why does Rust need fancy coherence rules? Why not check for multiply
+> defined `impl`s at link time?
+
+I imagine because "link time" could effectively mean run time.
+
+@@@
 
 > In this issue <https://github.com/rust-lang/rust/issues/31299>,
 > what is going on?
@@ -980,6 +1045,10 @@ If `MyTrait` has any static methods, Rust can't autogenerate an impl:
 
 `rustc --explain E0038` covers all this in apalling detail.
 
+> If a trait has a method that takes `self` by value (not by reference),
+> can that trait be suitable for trait objects?
+
+Yes. But I don't know of any way to call such a method via a trait object!
 
 > Is "suitable for trait objects" a per-trait or per-method property?
 
@@ -1055,6 +1124,7 @@ and therefore doesn't have to dynamically dispatch dropping it.
 However suppose you just have non-generic method that has a `Box<Foo>`.
 It must be that when the `Box<Foo>` is dropped, the destructor gets called
 via something like a C++ virtual destructor call.
+So in general, vtables *do* contain destructor information.
 
 > For a trait `X`, is the bound `Box<X>: Drop` satisfied?
 
@@ -1066,6 +1136,17 @@ via something like a C++ virtual destructor call.
 > Interested in the other direction, too.)
 
 @@@
+
+> Rust autoconverts `&T` to `&Tr` when `T: Tr`.
+> Will it, then, autoconvert `Box<T>` to `Box<Tr>`?
+
+Yes!
+
+    let it = 0..5;
+    let b = Box::new(it);
+    let bt: Box<Iterator<Item=i32>> = b;
+
+(I think there is an unstable trait that mediates this: `Unsize`.)
 
 
 ## Terminology
@@ -1365,6 +1446,8 @@ Sure can.
     let b: Box<Fn()> = Box::new(|| println!("woof"));
     b();  // woof!
 
+In recent Rusts, there's something called `FnBox` that might explain this. @@@
+
 More elaborately:
 
     fn make_adder(n: i32) -> Box<Fn(i32) -> i32> {
@@ -1381,6 +1464,123 @@ More elaborately:
 No, the `move` is necessary. If you drop it, `n` is borrowed by default (even
 though it's small and copyable) so the closure would not be allowed to outlive
 `n` the way it does here.
+
+> Does Rust infer the most general types for closures assigned to
+> `let`-bindings? That is, does it have ML's "`let`-polymorphism"?
+
+No:
+
+    // error: the type of this value must be known in this context
+    let f = |x| x.len();
+
+    // error: unable to infer enough type information
+    let f = |x| x + 1;
+
+We can fix the second case simply by using `f`.
+
+    let f = |x| x + 1;  // ok because we're using it
+    println!("{}", f(1u8));
+
+But the inferred type of `f` here is not generic, as we'll see
+if we try to use the same closure again:
+
+    let f = |x| x + 1;  // ok because we're using it
+    println!("{}", f(1u8));
+    println!("{}", f(1000u32));  // error: mismatched types: expected u8, found u32
+
+AFAICT `let` bindings can't have generic types, even if you ask nicely:
+
+    // error: expected `>`, found `T`
+    let f: for<T: Copy> Fn(T) -> (T, T) = |x| (x, x);
+
+
+> Does Rust complain about type lifetimes only when I'm using closures?
+
+It's more likely to complain with errors like
+``the parameter type `T` may not live long enough``
+when you're using closures, I think, because
+closures very often implicitly have non-`'static` lifetimes.
+
+    let mut v = vec![];
+    let a = 33;
+    let f = |x: u32| x + a;  // error: `a` does not live long enough
+    v.push(f);
+
+The closure `f` implicitly contains a borrowed reference to `a`,
+so `f` can't outlive `a`.
+So it can't be added to the vector `v`.
+
+Other types can have non-`'static` lifetimes, but you have to write some odd code.
+For example:
+
+    struct T<'a> {
+        p: &'a i32
+    }
+
+    let mut v = vec![];
+    let a = 33;
+    let t = T { p: &a };
+    v.push(t);
+
+A tuple containing a reference also implicitly has the lifetime of the reference.
+
+@@@
+
+> Does using `move` sometimes fix errors about type lifetimes (because
+> the implicitly defined closure type then doesn't contain implicit
+> references of limited lifetime)?
+
+Yes. To take the above example:
+
+    let mut v = vec![];
+    let a = 33;
+    let f = move |x: u32| x + a;
+    v.push(f);
+    assert_eq(v[0](22), 55);
+
+With `move`, it works fine.
+
+However, if you are getting the error
+``the parameter type `T` may not live long enough``
+then you'll have to add a `'static` or other lifetime bound to the type parameter.
+
+> Are closures ever `Copy`/`Clone`?
+
+No. The simplest case:
+
+    let f = || { true };
+    let g = f.clone();  // error: no method named `clone` found
+
+Likewise `Copy`:
+
+    let f = || { true };
+    let h = f;
+    f();  // error: use of moved value
+
+(However, they are automatically `Send`/`Sync` if possible.
+This is determined using the same analysis Rust uses for structs.)
+
+> If I try to call something that isn't callable (i.e. isn't FnOnce or
+> FnBox), do Deref coercions get used in an attempt to find a type that
+> *is* callable?
+
+Yes!
+
+    use std::ops::Deref;
+
+    struct Q(Box<Fn()>);
+
+    impl Deref for Q {
+        type Target = Fn() + 'static;
+        fn deref(&self) -> &Self::Target {
+            &*self.0
+        }
+    }
+
+    fn main() {
+        let q = Q(Box::new(|| println!("hello world")));
+        q();  // works!
+    }
 
 
 ## Statics
@@ -1431,26 +1631,31 @@ This is documented under [std::prelude](http://doc.rust-lang.org/std/prelude/ind
 No.
 
     mod a {
-        pub fn g() -> i32 { 123 }
+        pub fn f() -> i32 { 123 }
         pub mod b {
-            pub fn f() -> i32 { a::g() }  // error: Use of undeclared type or module `a`
+            pub fn g() -> i32 { f() }  // error: unrseolved name `f`
+            pub fn h() -> i32 { a::f() }  // error: Use of undeclared type or module `a`
         }
     }
 
     fn main() {
-        println!("{}", a::b::f());
+        println!("{}", a::b::g());
     }
 
 You have to import them.
 
+This makes more sense when you consider that mostly, modules are
+physically located in separate files. It would be weird for a file to
+"lexically" inherit names from another file.
+
 > In a `use` declaration, what's in scope?
 
-They aren't like other paths.
+The path in a `use` declaration is automatically absolute, as if you started it with `::`.
 
-Setting aside the relative import forms `super::foo` and `self::bar`,
-the paths that appear in `use` declarations are "absolute":
-the first step in the path must be `std`
-or a crate explicitly opened with `extern crate foo;` at toplevel.
+That is, the first step in the path must be `std`,
+or a crate explicitly opened with `extern crate foo;` at toplevel,
+or a module declared at toplevel.
+(This is unlike all other paths.)
 
 > Can you `let`-declare a name that, *later* in the same block,
 > is declared as an item? Does the `let` declaration shadow the item?
@@ -1473,12 +1678,6 @@ Yes:
 
 But it doesn't do anything special.
 Paths in `use` declarations are automatically absolute paths.
-
-> Is `::<` one token or two?
-
-Two:
-
-    Vec::/**/<i32>::new()    // ok
 
 > Can a block contain a module?
 
@@ -1517,9 +1716,32 @@ will do the trick:
     }
 
 
+> Is `::<` one token or two?
+
+Two:
+
+    Vec::/**/<i32>::new()    // ok
+
 > A path can start with `<` *type* `>::`. What does that do?
 
-@@@
+It's just the same as *type* `::`, except that the parser knows it's parsing a type right away.
+This matters when *type* is generic:
+
+    <Vec<i32>>::new()  // ok
+    Vec<i32>::new()    // error: chained comparison operators
+
+The other way to write this is using the turbofish:
+
+    Vec::<i32>::new()  // ok
+
+Weirdly you cannot combine the two fixes:
+
+    <Vec::<i32>>::new()  // error: expected identifier, found `<`
+
+A variation on this syntax, using the `as` keyword,
+is used for Universal Function Call Syntax when calling trait methods:
+
+    <Type as Trait>::method(...)
 
 > Can you have both a type and a `fn` with the same name in the same module?
 
@@ -1539,15 +1761,13 @@ type and a value.
 
 > When is a non-`pub` member of a module visible from another module?
 
-I don't know, but certainly:
+It's visible to everything in the module where it's declared.
 
     mod a {
         pub struct X { f: i32 }
         mod b { /* X::f is accessible here */ }
     }
     mod c { /* X::f is not accessible here */
-
-@@@
 
 > Can the fields of a tuple struct be public?
 
@@ -1556,7 +1776,8 @@ Yes:
     pub struct A(pub i32, pub i32);
 
 If any field of a tuple struct isn't visible to you,
-then you can't invoke it as a constructor.
+then you can't invoke it as a constructor
+or use it in a destructuring pattern.
 
 > Can individual variants of an `enum` be `pub`?
 
@@ -1566,9 +1787,23 @@ No, `pub` isn't grammatically allowed inside an `enum` declaration.
 > (and some methods)
 > without also exporting all the constructors?
 
-I don't think so!
+No. I seem to remember some workaround for this, but I have forgotten it.
+
+(I really think the language should allow an enum to be declared
+with `, ..` at the end, instructing Rust to reject "exhaustive" matches
+against all the cases, so that you can add more in a later version
+without breaking compatibility.)
 
 @@@
+
+> When you write `mod foo;` what files does Rust look for, and in what order?
+
+It looks for both `foo.rs` and `foo/mod.rs`.
+It's an error if neither file exists, or if both exist.
+
+> Can you write `mod outer { mod inner; }`? Where does Rust look for the body of `inner`?
+
+Yes: Rust looks for `outer/inner.rs` and (I didn't check, but presumably) `outer/inner/mod.rs`.
 
 
 ## Crates
@@ -1579,6 +1814,12 @@ I don't think so!
 
 > Can an arbitrary crate (in source form or in binary form) be turned
 > into a .so/.dylib/.dll shared library?
+
+If you've got source, compile with `rustc --crate-type=dylib`, and
+rustc will build you a shared library.
+I would have to figure out the tools to look inside that and
+see what's actually in there, though.
+The things are probably not named the way you'd expect if you're used to C/C++.
 
 @@@
 
@@ -1604,13 +1845,27 @@ I don't think so!
 > Suppose a dependency of my project updates from 1.4.7 to 1.4.8. How do I tell
 > Cargo to update? Do I have to recompile my project?
 
-@@@
+`cargo update`. Yes, cargo will recompile your project, for several reasons.
+
+*   Everything's statically linked by default.
+
+*   Your project may contain machine code generated from generics in the
+    dependency.
+
+*   Cargo really does not know much about this stuff and just runs
+    `rustc` whenever a dependency has changed.
 
 > What I'm getting at with all of the above is, what does it mean for a point
 > release of a Rust crate to be "compatible" with the previous point release?
 > Is there a "source compatible" vs. "binary compatible" distinction in Rust?
 
-@@@
+Rust's tools do not honor any sort of notion of "binary compatibility".
+When we say that version 1.2.3 of any crate has to be compatible with 1.2.1,
+we're referring to source compatibility.
+
+If a dependency changes in any way,
+you don't just re-link downstream code.
+You need to recompile.
 
 > But in particular, how is the `#[derive(Serialize)]` thing in
 > `serde_json` implemented, within `serde_json`, and how is it handled
@@ -1618,6 +1873,79 @@ I don't think so!
 > crate`?
 
 @@@
+
+
+## Concurrency
+
+> What are `Send` and `Sync`?
+
+They're the traits that Rust's thread-safety story is built on.
+
+A type is `Send` if it's safe to pass **by value** from one thread to
+another.  That is, `T: Send` means it's safe to *move* values of type
+`T` between threads.  Almost everything is `Send`, including all the
+built-in types, references, slices, strings, and containers of `Send`
+types. The exceptions are `Rc` and `Weak`; pointers; and an unstable
+feature called `mpsc::Select`. We can talk about all those in a minute.
+
+A type is `Sync` if it's safe to pass **by reference** from one thread
+to another. That is, `T: Sync` means it's safe for multiple threads to
+have non-`mut` references to the same `T` value at the same time. Most
+types are `Sync`, including all the built-in types, references, slices,
+strings, and collections of `Sync` types. But several more types are not
+`Sync`: pointers; cells (values with internal mutability); `Rc` and
+`Weak`; and several `mpsc` channel-handles, like `mpsc::Receiver<T>`.
+
+> Does Rust really derive `Sync` and `Send` without me even asking?
+
+Yes! Unlike `Copy` and `Clone`, types are `Sync` and `Send` if all their
+components are. This is automatic. No `#[derive]` attribute required.
+
+I believe the reason for this is to make more types throughout the ecosystem `Sync` and `Send`.
+It would be frustrating to need to treat something as `Sync`
+and have that type turn out not to be `Sync`
+because the author just didn't happen to think of it.
+
+> Is anything `Sync` but not `Send`?
+
+As far as I can tell, nothing in the standard library is `Sync` but not `Send`.
+
+Short of `#![feature(optin_builtin_traits)]` I don't know of any
+way in the language to cause the first such type to exist.
+
+> `mpsc::Sender<T>::send(&self, T)` doesn't seem to have a `T: Send` bound.
+> How is that safe?!
+
+It's true, that method *doesn't* have a `Send` bound on it. In fact
+nothing in `mpsc` really does; you can create an `mpsc::channel` that
+transmits `Rc<i32>` values and send values through to your heart's
+desire.  (`Rc` is not thread-safe.)
+
+This is OK because what the language *won't* let you do is get either
+end of the channel into another thread.
+
+> How can `Send` have any regulatory force if the trait is empty?
+
+For one thing, it's an unsafe trait. You can't safely tell Rust that a type is
+`Send` if it isn't.
+
+Let's take one of these safety properties:
+
+*   Rust prevents non-`Send` values from being moved from one thread to another.
+
+`Rc` is a good example of a non-`Send` type. It would be very bad if you
+could move one of those to thread #2, while `Rc` pointers to the same
+value still exist in thread #1. So this rule is important.
+
+How does Rust enforce it?
+
+*   Base case: `thread::spawn` and other APIs are designed not
+    to move non-`Send` values to the new thread.
+
+*   Base case: the language doesn't have any global mutable state that two threads
+    could use to exchange values. That is, threads don't share memory directly.
+
+*   Inductive case: @@@
 
 
 ## Macros
@@ -1709,10 +2037,8 @@ an identifier token is permitted before the mandatory delimited token-tree,
 and if the delimited token-tree uses `()` or `[]`,
 then a semicolon is required after.
 
-Macros are permitted in a *lot* of different contexts;
-I'll have to look to see what patterns there are.
-
-@@@
+Macro invocations are permitted in a *lot* of different contexts;
+I'd have to look to see what patterns there are.
 
 > What about `my_macro!(X)` where X is required to be a single token tree?
 
