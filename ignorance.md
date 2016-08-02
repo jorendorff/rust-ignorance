@@ -885,6 +885,23 @@ No. `error: expected ident`.
 
 No.
 
+> Given `#[derive(Default)] pub struct X { pub a: i32, b: i32 }`,
+> from outside the module can you say:  `X { a: 3, ..X::default() }`?
+>
+> (The point of this question is that if this worked, having a private
+> field would be a way to make a struct "growable" -- you could add
+> public fields without breaking compatibility -- and your users could
+> still use this nice notation for creating objects.)
+
+Nope. :(
+
+Too bad! You can still build such a struct by mutation, of course:
+
+    {
+        let mut x = X::default();
+        x.a = 3;
+        x
+    }
 
 
 ## Traits
